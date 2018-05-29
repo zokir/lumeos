@@ -126,8 +126,72 @@ struct Users : public eosio::contract {
         auto const& currentUser = users.get(accountName);
         eosio::print(static_cast<std::string>(currentUser).c_str());
     }
+
+    auto getUserItr(eosio::name const accountName, userIndex const& users) {
+        auto result = users.find(accountName);
+        eosio_assert(
+            result != users.end(),
+            std::string("User not found: " + accountName.to_string()).c_str());
+
+        return result;
+    }
+
+    struct friendship {
+        eosio::name m_accountName;
+        std::set<eosio::name> m_friends;
+
+        operator std::string() const {
+            return m_accountName.to_string() + " has " + std::to_string(m_friends.size()) + " friends.";
+        }
+
+        uint64_t primary_key() const { return m_accountName; }
+
+        EOSLIB_SERIALIZE(friendship, (m_accountName)(m_friends))
+    };
+
+    using FriendsList = eosio::multi_index<N(friendship), friendship>;
+
+    void validateUser(eosio::name const accountName) {
+        userIndex users(_self, _self);
+        eosio_assert(
+            users.find(accountName) != users.end(),
+            std::string("User not found: " + accountName.to_string()).c_str());
+    }
+
+    void makeFriends(eosio::name const firstAccountName,
+                     eosio::name const secondAccountName) {
+       FriendsList friendList( _self, _self);
+       auto mainItr = friendList.find( firstAccountName );
+       if( mainItr == friendList.end() ) {
+          friendList.emplace(_self, [&]( auto& person ){
+            person.m_friends.insert(secondAccountName);
+          });
+       } else {
+          friendList.modify(mainItr, 0, [&]( auto& person ) {
+            person.m_friends.insert(secondAccountName);
+          });
+       }
+    }
+
+    // @abi action
+    void updateflist(eosio::name const firstAccountName,
+                      eosio::name const secondAccountName, bool becomingFriends) {
+        eosio_assert( firstAccountName != secondAccountName, "Cannot self friend" );
+        require_auth( _self );
+
+        validateUser(firstAccountName);
+        validateUser(secondAccountName);
+
+        if (becomingFriends) {
+            eosio::print("make friends");
+            makeFriends(firstAccountName, secondAccountName);
+        } else {
+            eosio::print("unfriend");
+            // unfriend(firstAccountName, secondAccountName)
+        }
+    }
 };  // Users
 
-EOSIO_ABI(Users, (create)(remove)(setemail)(setname)(setdob)(getuser))
+EOSIO_ABI(Users, (create)(remove)(setemail)(setname)(setdob)(getuser)(updateflist))
 
 }  // namespace lumeos
